@@ -10,6 +10,9 @@ import {
 } from './beauty.js';
 import { Framer } from './guide.js';
 import { selfieLayout, drawHeadBox, drawPhoneIcon } from './selfie.js';
+import { STYLES, rankStyles, styleById } from './styles.js';
+import { classifyPhoto, profileFromAnalysis } from './phototype.js';
+import { buildPrompt, SCOPES } from './prompt.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -77,6 +80,7 @@ function boot() {
   buildPoses();
   buildMoods();
   bind();
+  bindAi();
   selectPose(S.poseId);
   applyGrade();
   // 上次的档位（老版本的 gw.figure=0 迁移成"全隐藏"）
@@ -852,6 +856,8 @@ function openEdit(raw) {
   // 先把弹层画出来，再做重计算，避免白屏
   requestAnimationFrame(() => setTimeout(() => {
     beauty = new Beauty(raw, 1400);
+    aiAnalysis = analysisOfCanvas(raw);
+    aiState.scope = 'depth';
     editOpts = { ...BEAUTY_DEFAULT };
     editGrade = (S.params && S.params.grade) || S.gradeId;
     editK = 1;
@@ -978,6 +984,7 @@ async function shareEdit() {
 
 function closeEdit() {
   $('#edit').classList.remove('on');
+  $('#ai').classList.remove('on');
   $('#editBusy').classList.remove('on');
   beauty = null;
   editBlob = null;
@@ -1192,5 +1199,248 @@ function switchTab(t) {
   }
 }
 
+/* ---------------- AI 精修提示词 ---------------- */
+let aiAnalysis = null;
+let aiRefProfile = null;
+let aiRefUrl = '';
+const aiState = { styleId: null, scope: 'depth' };
+
+/** 把任意画布/图片缩到 150 宽做同款分析，给照片"验明正身"用 */
+function analysisOfCanvas(src) {
+  const w = 150;
+  const h = Math.max(70, Math.round(w * (src.height / src.width)));
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const cx = c.getContext('2d', { willReadFrequently: true });
+  cx.drawImage(src, 0, 0, w, h);
+  try {
+    return analyzePixels(cx.getImageData(0, 0, w, h).data, w, h);
+  } catch (e) {
+    return null;
+  }
+}
+
+function hexShade(hex, d) {
+  const n = parseInt(hex.replace('#', ''), 16);
+  const cl = (v) => Math.max(0, Math.min(255, v + d));
+  return `rgb(${cl((n >> 16) & 255)},${cl((n >> 8) & 255)},${cl(n & 255)})`;
+}
+
+/** 风格卡的预览图：天空渐变 + 地面 + 太阳 + 人形剪影 + 该风格对应的调色 */
+function drawStylePreview(cv, st) {
+  const w = 98, h = 112, dpr = 2;
+  cv.width = w * dpr; cv.height = h * dpr;
+  const c = cv.getContext('2d');
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  if (!editTmp) editTmp = document.createElement('canvas');
+  const tmp = editTmp;
+  tmp.width = w; tmp.height = h;
+  const t = tmp.getContext('2d');
+
+  const sky = t.createLinearGradient(0, 0, 0, h * 0.72);
+  sky.addColorStop(0, st.look.sky[0]);
+  sky.addColorStop(1, st.look.sky[1]);
+  t.fillStyle = sky;
+  t.fillRect(0, 0, w, h);
+
+  const gd = t.createLinearGradient(0, h * 0.62, 0, h);
+  gd.addColorStop(0, st.look.ground);
+  gd.addColorStop(1, hexShade(st.look.ground, -26));
+  t.fillStyle = gd;
+  t.fillRect(0, h * 0.62, w, h * 0.38);
+
+  if (st.look.sun) {
+    const sx = st.look.sun === 'left' ? w * 0.2 : st.look.sun === 'right' ? w * 0.8 : w * 0.5;
+    const rg = t.createRadialGradient(sx, h * 0.26, 2, sx, h * 0.26, 40);
+    rg.addColorStop(0, 'rgba(255,248,226,.95)');
+    rg.addColorStop(0.4, 'rgba(255,222,175,.55)');
+    rg.addColorStop(1, 'rgba(255,200,140,0)');
+    t.fillStyle = rg;
+    t.fillRect(0, 0, w, h);
+  }
+
+  const fig = POSES.find((p) => p.cat === '站姿') || POSES[0];
+  renderPose(t, fig, {
+    cx: w * 0.52, bottom: h * 0.985, height: h * 0.6,
+    color: 'rgba(24,18,14,.78)', mode: 'solid', outline: false, shadow: false,
+  });
+
+  const pr = PRESETS.find((p) => p.id === st.look.grade);
+  const f = pr ? buildFilter(pr, 0.92) : 'none';
+  if (f && f !== 'none') c.filter = f;
+  c.drawImage(tmp, 0, 0);
+
+  if (st.look.vig) {
+    c.filter = 'none';
+    const vg = c.createRadialGradient(w / 2, h * 0.45, h * 0.28, w / 2, h * 0.45, h * 0.85);
+    vg.addColorStop(0, 'rgba(0,0,0,0)');
+    vg.addColorStop(1, `rgba(0,0,0,${st.look.vig})`);
+    c.fillStyle = vg;
+    c.fillRect(0, 0, w, h);
+  }
+}
+
+function renderAiStyles(ranked) {
+  const box = $('#aiStyles');
+  box.innerHTML = '';
+  for (const { style } of ranked.slice(0, 12)) {
+    const b = document.createElement('button');
+    b.className = 'ai-style' + (style.id === aiState.styleId && !aiRefProfile ? ' on' : '');
+    b.dataset.id = style.id;
+    const cv = document.createElement('canvas');
+    drawStylePreview(cv, style);
+    const t = document.createElement('div');
+    t.className = 'ai-style-t';
+    t.innerHTML = `<b>${style.name}</b><i>${style.tag}</i>`;
+    b.append(cv, t);
+    box.append(b);
+  }
+}
+
+function renderAiScopes() {
+  const box = $('#aiScopes');
+  box.innerHTML = SCOPES.map((s) => (
+    `<button class="ai-scope${s.id === aiState.scope ? ' on' : ''}" data-scope="${s.id}">
+       <b>${s.name}</b><span>${s.hint}</span>
+     </button>`)).join('');
+}
+
+function openAi() {
+  if (!aiAnalysis) { toast('还没读到这张照片，稍等一下'); return; }
+  const cls = classifyPhoto(aiAnalysis);
+  $('#aiType').innerHTML = `<b>这张照片：${cls.title}</b><ul>${cls.why.map((x) => `<li>${x}</li>`).join('')}</ul>`;
+  const ranked = rankStyles(cls.tags);
+  if (!aiState.styleId || !ranked.some((r) => r.style.id === aiState.styleId)) {
+    aiState.styleId = ranked[0].style.id;
+  }
+  renderAiStyles(ranked);
+  renderAiScopes();
+  $('#aiOut').hidden = true;
+  $('#aiStyleName').textContent = aiRefProfile ? '用参考图的光色' : styleById(aiState.styleId).name;
+  $('#ai').classList.add('on');
+}
+
+function buildAiPrompt() {
+  const cls = classifyPhoto(aiAnalysis);
+  const style = aiRefProfile ? null : styleById(aiState.styleId);
+  const r = buildPrompt({
+    cls,
+    style,
+    profile: aiRefProfile,
+    scope: aiState.scope,
+    subject: { count: S.subject.count },
+    aspect: '3:4',
+  });
+  $('#aiOut').hidden = false;
+  $('#aiFull').value = r.text;
+  $('#aiShort').value = r.short;
+  // 文本框按内容撑开，别让一屏只看到半段（必须先显示出来，否则 scrollHeight 是 0）
+  for (const id of ['aiFull', 'aiShort']) {
+    const ta = $('#' + id);
+    ta.style.height = 'auto';
+    ta.style.height = (ta.scrollHeight + 4) + 'px';
+  }
+  $('#aiParams').innerHTML = r.params.map((p) => (
+    `<div class="ai-param"><b>${p.k}</b><em>${p.v}</em><p>${p.why}</p></div>`)).join('');
+  $('#aiSteps').innerHTML = r.steps.map((s) => (
+    `<div class="ai-step"><b>${s.app}</b><ol>${s.list.map((x) => `<li>${x}</li>`).join('')}</ol></div>`)).join('');
+  $('#aiOut').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+async function copyText(t) {
+  try {
+    await navigator.clipboard.writeText(t);
+    toast('已复制，去 App 里粘贴');
+    return;
+  } catch (e) { /* 落到老办法 */ }
+  const ta = document.createElement('textarea');
+  ta.value = t;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.append(ta);
+  ta.select();
+  try {
+    document.execCommand('copy');
+    toast('已复制，去 App 里粘贴');
+  } catch (e) {
+    toast('复制失败：长按文字框全选再复制');
+  }
+  ta.remove();
+}
+
+function clearAiRef() {
+  aiRefProfile = null;
+  if (aiRefUrl) { URL.revokeObjectURL(aiRefUrl); aiRefUrl = ''; }
+  const img = $('#aiRefImg');
+  img.hidden = true;
+  img.removeAttribute('src');
+  $('#aiClearRef').hidden = true;
+  $('#aiRefBtn').textContent = '贴一张我喜欢的网图';
+  $('#aiRefNote').textContent = '参考图只取它的光线和颜色，不猜内容。贴图后提示词会按你这张参考图的实测光色来写。';
+  $('#aiStyleName').textContent = styleById(aiState.styleId).name;
+  renderAiStyles(rankStyles(classifyPhoto(aiAnalysis).tags));
+  if (!$('#aiOut').hidden) buildAiPrompt();
+}
+
+function bindAi() {
+  $('#btnAi').onclick = openAi;
+  $('#aiBack').onclick = () => $('#ai').classList.remove('on');
+  $('#aiBuild').onclick = buildAiPrompt;
+
+  $('#aiStyles').addEventListener('click', (e) => {
+    const b = e.target.closest('.ai-style');
+    if (!b) return;
+    if (aiRefProfile) clearAiRef();
+    aiState.styleId = b.dataset.id;
+    $$('#aiStyles .ai-style').forEach((x) => x.classList.toggle('on', x === b));
+    $('#aiStyleName').textContent = styleById(aiState.styleId).name;
+    if (!$('#aiOut').hidden) buildAiPrompt();
+  });
+
+  $('#aiScopes').addEventListener('click', (e) => {
+    const b = e.target.closest('.ai-scope');
+    if (!b) return;
+    aiState.scope = b.dataset.scope;
+    $$('#aiScopes .ai-scope').forEach((x) => x.classList.toggle('on', x === b));
+    if (!$('#aiOut').hidden) buildAiPrompt();
+  });
+
+  $('#aiRefBtn').onclick = () => $('#aiRefFile').click();
+  $('#aiClearRef').onclick = clearAiRef;
+  $('#aiRefFile').onchange = (e) => {
+    const f = e.target.files && e.target.files[0];
+    if (!f) return;
+    const url = URL.createObjectURL(f);
+    const im = new Image();
+    im.onload = () => {
+      const a = analysisOfCanvas(im);
+      if (!a) { toast('这张图读不了，换一张试试'); return; }
+      if (aiRefUrl) URL.revokeObjectURL(aiRefUrl);
+      aiRefUrl = url;
+      aiRefProfile = profileFromAnalysis(a);
+      const img = $('#aiRefImg');
+      img.src = url;
+      img.hidden = false;
+      $('#aiClearRef').hidden = false;
+      $('#aiRefBtn').textContent = '换一张参考图';
+      $('#aiRefNote').textContent = `参考图实测：${aiRefProfile.line}。内容相关的描述已经按"保持原样"处理，你可以在完整版里自己补两句。`;
+      $('#aiStyleName').textContent = '用参考图的光色';
+      $$('#aiStyles .ai-style').forEach((x) => x.classList.remove('on'));
+      if (!$('#aiOut').hidden) buildAiPrompt();
+    };
+    im.onerror = () => toast('这张图读不了，换一张试试');
+    im.src = url;
+    e.target.value = '';
+  };
+
+  $('#ai').addEventListener('click', (e) => {
+    const c = e.target.closest('[data-copy]');
+    if (!c) return;
+    copyText($('#' + c.dataset.copy).value);
+  });
+}
+
 /* ---------------- 起 ---------------- */
 window.addEventListener('DOMContentLoaded', boot);
+

@@ -1,5 +1,5 @@
-光位 v1.3
-build: guangwei-557e252a
-commit: v1.3 自拍模式：头部框/多人排布/自拍姿势10式/定时器/大字HUD
-date: 2026-11-18 02:19
+光位 v1.4
+build: guangwei-ac639a59
+commit: v1.4 AI 精修提示词：照片类型识别 + 16 张风格卡 + 参考图反推 + 三档范围 + 即梦/豆包/可灵提示词
+date: 2026-11-18 03:48
 live: https://yanzhongmin.github.io/guangwei/

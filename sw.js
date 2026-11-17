@@ -1,5 +1,5 @@
 /* sw.js — 离线壳缓存。改前端文件时把 VERSION 加一，手机上重新打开就会更新。 */
-const VERSION = 'guangwei-557e252a';
+const VERSION = 'guangwei-ac639a59';
 const ASSETS = [
   './',
   './index.html',
@@ -14,6 +14,9 @@ const ASSETS = [
   './js/beauty.js',
   './js/guide.js',
   './js/selfie.js',
+  './js/styles.js',
+  './js/phototype.js',
+  './js/prompt.js',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/apple-touch-icon.png',

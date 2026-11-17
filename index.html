@@ -201,6 +201,7 @@
     <div class="edit-stage">
       <canvas id="editCanvas"></canvas>
       <div class="edit-busy" id="editBusy">正在处理这张照片…</div>
+      <button class="ai-fab" id="btnAi">✨ 让 AI 精修</button>
     </div>
     <div class="edit-body">
       <div class="edit-sec">
@@ -218,6 +219,61 @@
         <div class="slider-row">
           <span>强度</span>
           <input type="range" id="editK" min="0" max="100" value="100">
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="sheet ai" id="ai" hidden>
+  <div class="sheet-card ai-card">
+    <div class="edit-top">
+      <button class="btn ghost sm" id="aiBack">返回</button>
+      <span class="edit-title">让 AI 精修</span>
+      <button class="btn primary sm" id="aiBuild">生成提示词</button>
+    </div>
+    <div class="ai-scroll">
+      <div class="ai-type" id="aiType"></div>
+
+      <div class="ai-sec">
+        <div class="edit-hd"><b>1. 挑一个你喜欢的风格</b><i class="edit-gname" id="aiStyleName">—</i></div>
+        <div class="ai-styles" id="aiStyles"></div>
+        <div class="ai-ref">
+          <button class="btn ghost sm" id="aiRefBtn">贴一张我喜欢的网图</button>
+          <button class="mini" id="aiClearRef" hidden>取消参考图</button>
+          <input type="file" id="aiRefFile" accept="image/*" hidden>
+          <img id="aiRefImg" alt="" hidden>
+        </div>
+        <p class="ai-note" id="aiRefNote">参考图只取它的光线和颜色，不猜内容。贴图后提示词会按你这张参考图的实测光色来写。</p>
+      </div>
+
+      <div class="ai-sec">
+        <div class="edit-hd"><b>2. 想改到什么程度</b></div>
+        <div class="ai-scopes" id="aiScopes"></div>
+      </div>
+
+      <div class="ai-out" id="aiOut" hidden>
+        <div class="ai-sec">
+          <div class="edit-hd">
+            <b>完整版</b>
+            <button class="mini" data-copy="aiFull">复制</button>
+          </div>
+          <textarea class="ai-text" id="aiFull" rows="8" readonly></textarea>
+        </div>
+        <div class="ai-sec">
+          <div class="edit-hd">
+            <b>精简版</b><span class="edit-tag">输入框短就用这个</span>
+            <button class="mini" data-copy="aiShort">复制</button>
+          </div>
+          <textarea class="ai-text" id="aiShort" rows="4" readonly></textarea>
+        </div>
+        <div class="ai-sec">
+          <div class="edit-hd"><b>参数怎么填</b></div>
+          <div class="ai-params" id="aiParams"></div>
+        </div>
+        <div class="ai-sec">
+          <div class="edit-hd"><b>三个 App 的操作步骤</b></div>
+          <div class="ai-steps" id="aiSteps"></div>
         </div>
       </div>
     </div>
