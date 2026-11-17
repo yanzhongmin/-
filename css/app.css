@@ -346,20 +346,25 @@ input[type=range]::-webkit-slider-thumb{
 .back-cam[hidden]{display:none}
 .back-cam:active{background:rgba(255,180,107,.2);color:var(--accent)}
 
-/* 取景框右缘：一键隐藏 / 显示构图辅助 */
+/* 取景框右缘：三档循环 全显示 → 只留框 → 全隐藏 */
 .edge{
-  position:absolute;right:0;top:44%;transform:translateY(-50%);z-index:7;
-  width:30px;height:58px;border-radius:14px 0 0 14px;
-  display:flex;align-items:center;justify-content:center;
+  position:absolute;right:0;top:42%;transform:translateY(-50%);z-index:7;
+  width:34px;height:72px;border-radius:17px 0 0 17px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;
   background:rgba(10,13,18,.52);
   backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
   border:1px solid rgba(255,255,255,.13);border-right:0;
   color:#e2e8f2;transition:background .18s,color .18s,opacity .18s;
 }
 .edge[hidden]{display:none}
-.edge .slash{opacity:0;transition:opacity .18s}
-.edge.off{background:rgba(10,13,18,.3);color:#8d97a6}
-.edge.off .slash{opacity:1}
+.edge .ic{display:none}
+.edge[data-mode="full"] .ic-full,
+.edge[data-mode="frame"] .ic-frame,
+.edge[data-mode="off"] .ic-off{display:block}
+.edge-lb{
+  font-size:9px;line-height:1;letter-spacing:.5px;
+  writing-mode:vertical-rl;color:currentColor;opacity:.8;
+}
+.edge[data-mode="frame"]{color:#cfd8e6}
+.edge[data-mode="off"]{background:rgba(10,13,18,.3);color:#8d97a6;border-color:rgba(255,255,255,.09)}
 .edge:active{transform:translateY(-50%) scale(.94)}
-/* 隐藏状态给个极轻的描边，避免"按钮消失了"的错觉 */
-.edge.off{border-color:rgba(255,255,255,.09)}

@@ -30,7 +30,7 @@ const S = {
   subject: { height: 170, style: 'f', outfitColor: '#e9e4dc', count: 1 },
   analysis: null, placement: null, params: null,
   live: false, photoEl: null, altIdx: 0, ready: false, showGrid: true,
-  showFigure: true,
+  figMode: 'full',
   aim: null,
 };
 
@@ -72,7 +72,8 @@ function boot() {
   bind();
   selectPose(S.poseId);
   applyGrade();
-  setFigure(readPref('gw.figure') !== '0', false);
+  // 上次的档位（老版本的 gw.figure=0 迁移成"全隐藏"）
+  setFigure(readPref('gw.fig') || (readPref('gw.figure') === '0' ? 'off' : 'full'), false);
   resize();
   new ResizeObserver(resize).observe(els.stage);
   if (DBG) {
@@ -324,8 +325,8 @@ function renderPoseList(cat) {
     b.append(c, label);
     b.onclick = () => {
       selectPose(p.id);
-      // 换姿势就是想看这个姿势，人形要是被藏了就先亮出来
-      if (!S.showFigure) setFigure(true);
+      // 换姿势就是想看这个姿势，被藏了就切回全显示
+      if (S.figMode !== 'full') setFigure('full');
     };
     list.append(b);
   }
@@ -403,7 +404,7 @@ const AIM_ARROW = { left: '←', right: '→', fwd: '↓', back: '↑' };
 function renderAim() {
   const el = els.aim;
   const a = S.aim;
-  if (!a || !a.present || !a.hint || a.state === 'unclear') {
+  if (!showFigure() || !a || !a.present || !a.hint || a.state === 'unclear') {
     el.classList.remove('on', 'ok');
     el.innerHTML = '';
     return;
@@ -423,22 +424,35 @@ function writePref(k, v) {
   try { localStorage.setItem(k, v); } catch { /* 无痕模式下就记不住，无所谓 */ }
 }
 
-/** 一键隐藏/显示姿势参考人形（站位框、网格、对位提示都保留） */
-function setFigure(on, save = true) {
-  S.showFigure = !!on;
+/**
+ * 右缘按钮的三档：full 全显示 / frame 只留框 / off 全隐藏
+ * - full：网格 + 备选框 + 主框 + 人形 + 「站这里」+ 对位提示
+ * - frame：只剩主框 + 脚底线 + 「站这里」（看真人形体时最干净）
+ * - off：什么都不画，纯取景
+ */
+const FIG_MODES = ['full', 'frame', 'off'];
+const FIG_LB = { full: '全开', frame: '留框', off: '隐藏' };
+const FIG_ARIA = { full: '构图辅助：全显示', frame: '构图辅助：只留框', off: '构图辅助：全隐藏' };
+const showFigure = () => S.figMode === 'full';
+const showGuide = () => S.figMode !== 'off';
+
+function setFigure(mode, save = true) {
+  if (!FIG_LB[mode]) mode = 'full';
+  S.figMode = mode;
   const b = els.btnOverlay;
   if (b) {
-    b.classList.toggle('off', !S.showFigure);
-    b.setAttribute('aria-pressed', String(S.showFigure));
-    b.setAttribute('aria-label', S.showFigure ? '隐藏姿势参考' : '显示姿势参考');
+    b.dataset.mode = mode;
+    b.setAttribute('aria-label', FIG_ARIA[mode]);
+    const lb = b.querySelector('.edge-lb');
+    if (lb) lb.textContent = FIG_LB[mode];
   }
-  // 恢复时顺手把"已隐藏"的提示收掉，免得自相矛盾
-  if (S.showFigure) {
+  // 离开"留框"就把那句循环说明收掉，免得它跟当前档位对不上
+  if (mode !== 'frame') {
     const t = document.getElementById('toast');
     if (t) t.classList.remove('on');
   }
   drawOverlay();
-  if (save) writePref('gw.figure', S.showFigure ? '1' : '0');
+  if (save) writePref('gw.fig', mode);
 }
 
 function resize() {
@@ -477,7 +491,7 @@ function drawOverlay() {
   if (!S.ready) return;
 
   // 网格
-  if (S.showGrid) {
+  if (showFigure() && S.showGrid) {
     octx.save();
     octx.strokeStyle = 'rgba(255,255,255,.20)';
     octx.lineWidth = 1;
@@ -493,19 +507,21 @@ function drawOverlay() {
 
   const p = S.placement;
   const box = currentBox();
-  if (p && box) {
+  if (p && box && showGuide()) {
     const bx = box.x * W, by = box.y * H, bw = box.w * W, bh = box.h * H;
-    // 备选位置
-    octx.save();
-    octx.setLineDash([4, 6]);
-    octx.strokeStyle = 'rgba(255,255,255,.28)';
-    octx.lineWidth = 1;
-    for (const [i, alt] of p.alts.entries()) {
-      if (i + 1 === S.altIdx) continue;
-      roundRect(octx, alt.box.x * W, alt.box.y * H, alt.box.w * W, alt.box.h * H, 14);
-      octx.stroke();
+    // 备选位置（全显示时才画，免得"只留框"还有一堆虚线）
+    if (showFigure()) {
+      octx.save();
+      octx.setLineDash([4, 6]);
+      octx.strokeStyle = 'rgba(255,255,255,.28)';
+      octx.lineWidth = 1;
+      for (const [i, alt] of p.alts.entries()) {
+        if (i + 1 === S.altIdx) continue;
+        roundRect(octx, alt.box.x * W, alt.box.y * H, alt.box.w * W, alt.box.h * H, 14);
+        octx.stroke();
+      }
+      octx.restore();
     }
-    octx.restore();
 
     // 主推荐框
     octx.save();
@@ -529,9 +545,8 @@ function drawOverlay() {
     octx.stroke();
     octx.restore();
 
-    // 姿势剪影
-    // 姿势剪影（可用右缘眼睛一键隐藏：人形常挡住真人）
-    if (S.showFigure) {
+    // 姿势剪影（右缘按钮切到"只留框/全隐藏"时会消失：人形常挡住真人）
+    if (showFigure()) {
       const pose = POSES.find((x) => x.id === S.poseId) || POSES[0];
       const flip = p.cx > 0.54;
       renderPose(octx, pose, {
@@ -556,9 +571,9 @@ function drawOverlay() {
     octx.restore();
   }
 
-  // 她已经站进画面 -> 画她的框 + 该往哪挪
+  // 她已经站进画面 -> 画她的框 + 该往哪挪（只有"全显示"时才画）
   const aim = S.aim;
-  if (aim && aim.present && aim.box) {
+  if (showFigure() && aim && aim.present && aim.box) {
     const b = aim.box;
     const bxx = b.x * W, byy = b.y * H, bww = b.w * W, bhh = b.h * H;
     const ok = aim.state === 'ok';
@@ -825,12 +840,13 @@ function bind() {
   $('#btnShutter').onclick = capture;
   $('#btnSubject').onclick = openSubject;
 
-  // 右缘眼睛：一键隐藏/显示姿势参考人形
+  // 右缘按钮：三档循环 全显示 → 只留框 → 全隐藏
   els.btnOverlay.onclick = () => {
-    setFigure(!S.showFigure);
-    if (!S.showFigure && readPref('gw.figTip') !== '1') {
+    const next = FIG_MODES[(FIG_MODES.indexOf(S.figMode) + 1) % FIG_MODES.length];
+    setFigure(next);
+    if (next === 'frame' && readPref('gw.figTip') !== '1') {
       writePref('gw.figTip', '1');
-      toast('姿势图已隐藏，框还留着 · 再点右边这只眼睛就回来', 2600);
+      toast('再点一次：全隐藏 · 第三次：全显示', 2400);
     }
   };
 

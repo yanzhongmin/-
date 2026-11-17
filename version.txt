@@ -1,5 +1,5 @@
-光位 v1.1
-build: guangwei-e6d7f6f8
-commit: version.txt 的版本号从 CHANGELOG 自动取
-date: 2026-11-18 01:04
+光位 v1.2
+build: guangwei-87f478a8
+commit: v1.2 右缘按钮三档循环：全显示/只留框/全隐藏
+date: 2026-11-18 01:22
 live: https://yanzhongmin.github.io/guangwei/
