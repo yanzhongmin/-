@@ -40,6 +40,10 @@
 
     <div class="coach" id="coach"></div>
     <div class="aim" id="aim"></div>
+    <!-- 自拍模式的大字号提示（自拍杆拿远了也看得清） -->
+    <div class="hud" id="hud" hidden><b id="hudTip"></b></div>
+    <div class="countdown" id="countdown" hidden></div>
+    <button class="stage-btn timer" id="btnTimer" hidden>定时 关</button>
     <button class="back-cam" id="backCam" hidden>回到相机</button>
 
     <!-- 取景框右缘：三档循环 全显示 → 只留框 → 全隐藏 -->
@@ -179,6 +183,7 @@
         <button data-count="1" class="on">1 人</button>
         <button data-count="2">2 人</button>
         <button data-count="3">3 人</button>
+        <button data-count="4">4 人</button>
       </div>
     </div>
     <p class="hint">身高和穿搭只会影响推荐的位置和比例，照片不会被上传。</p>

@@ -103,7 +103,19 @@ export function poseBBox(pose) {
     minX = Math.min(minX, x * sq - 0.02); maxX = Math.max(maxX, x * sq + 0.02);
     minY = Math.min(minY, y); maxY = Math.max(maxY, y);
   }
-  return { minX, minY, maxX, maxY, w: maxX - minX, h: maxY - minY };
+  const bb = { minX, minY, maxX, maxY };
+  // 多人：把每个人的框并进来，缩略图才不会把人裁掉
+  for (const c of crewOf(pose)) {
+    const sub = POSES.find((p) => p.id === c.id);
+    if (!sub || sub.id === pose.id) continue;
+    const sb = poseBBox(sub);
+    const k = c.small || 1;
+    const dx = c.dx || 0;
+    bb.minX = Math.min(bb.minX, sb.minX * k + dx);
+    bb.maxX = Math.max(bb.maxX, sb.maxX * k + dx);
+    bb.maxY = Math.max(bb.maxY, sb.maxY * k + (c.up || 0));
+  }
+  return { ...bb, w: bb.maxX - bb.minX, h: bb.maxY - bb.minY };
 }
 
 /* ---------- 绘制 ---------- */
@@ -117,21 +129,39 @@ function limb(ctx, a, b, w) {
   ctx.stroke();
 }
 
-function torsoPath(ctx, j, outfit) {
+function torsoPath(ctx, j, outfit, P) {
+  // 所有顶点先在"人体单位"里算，再统一映射到画布像素（P 需要缩放+翻转）
   const B = BODY;
+  const M = (x, y) => P([x, y]);
   const sL = j.shoulderL, sR = j.shoulderR, p = j.pelvis;
-  const waistL = [p[0] - (sL[0] - p[0]) * 0.72, p[1] - (p[1] - j.waist[1]) * 1.0];
-  const waistR = [p[0] + (sR[0] - p[0]) * 0.72, p[1] - (p[1] - j.waist[1]) * 1.0];
+  const hipY = p[1] + 0.012;
+  // 腰点要落在"肩点与中线之间"，左右不能翻面（翻面会让路径自交成一个蝴蝶结）
+  const waistL = [p[0] + (sL[0] - p[0]) * 0.72, j.waist[1]];
+  const waistR = [p[0] + (sR[0] - p[0]) * 0.72, j.waist[1]];
   ctx.beginPath();
-  ctx.moveTo(sL[0], sL[1] - 0.012);
-  ctx.quadraticCurveTo(sL[0] - 0.012, sL[1] + 0.045, sL[0] + 0.004, sL[1] + 0.075);
-  ctx.lineTo(waistL[0], waistL[1]);
-  ctx.quadraticCurveTo(p[0] - B.hipX - 0.012, p[1] + 0.005, p[0] - B.hipX, p[1] + 0.012);
-  ctx.lineTo(p[0] + B.hipX, p[1] + 0.012);
-  ctx.quadraticCurveTo(p[0] + B.hipX + 0.012, p[1] + 0.005, waistR[0], waistR[1]);
-  ctx.lineTo(sR[0] - 0.004, sR[1] + 0.075);
-  ctx.quadraticCurveTo(sR[0] + 0.012, sR[1] + 0.045, sR[0], sR[1] - 0.012);
-  ctx.quadraticCurveTo(p[0], sR[1] - 0.03, sL[0], sL[1] - 0.012);
+  let pt = M(sL[0], sL[1] - 0.012);
+  ctx.moveTo(pt[0], pt[1]);
+  let c = M(sL[0] - 0.012, sL[1] + 0.045);
+  pt = M(sL[0] + 0.004, sL[1] + 0.075);
+  ctx.quadraticCurveTo(c[0], c[1], pt[0], pt[1]);
+  pt = M(waistL[0], waistL[1]);
+  ctx.lineTo(pt[0], pt[1]);
+  c = M(p[0] - B.hipX - 0.012, p[1] + 0.005);
+  pt = M(p[0] - B.hipX, hipY);
+  ctx.quadraticCurveTo(c[0], c[1], pt[0], pt[1]);
+  pt = M(p[0] + B.hipX, hipY);
+  ctx.lineTo(pt[0], pt[1]);
+  c = M(p[0] + B.hipX + 0.012, p[1] + 0.005);
+  pt = M(waistR[0], waistR[1]);
+  ctx.quadraticCurveTo(c[0], c[1], pt[0], pt[1]);
+  pt = M(sR[0] - 0.004, sR[1] + 0.075);
+  ctx.lineTo(pt[0], pt[1]);
+  c = M(sR[0] + 0.012, sR[1] + 0.045);
+  pt = M(sR[0], sR[1] - 0.012);
+  ctx.quadraticCurveTo(c[0], c[1], pt[0], pt[1]);
+  c = M(p[0], sR[1] - 0.03);
+  pt = M(sL[0], sL[1] - 0.012);
+  ctx.quadraticCurveTo(c[0], c[1], pt[0], pt[1]);
   ctx.closePath();
   ctx.fill();
 }
@@ -141,15 +171,15 @@ function hairPath(ctx, j, style, mirror) {
   const hx = j.head[0], hy = j.head[1];
   ctx.beginPath();
   if (style === 'long') {
-    ctx.moveTo(hx - B.headR * 1.02, hy + 0.01);
-    ctx.quadraticCurveTo(hx - B.headR * 1.35, hy + 0.10, hx - B.headR * 0.95, hy + 0.155);
-    ctx.lineTo(hx - B.headR * 0.2, hy + 0.12);
-    ctx.quadraticCurveTo(hx - B.headR * 1.15, hy - 0.01, hx - B.headR * 0.6, hy - B.headR * 1.05);
+    ctx.moveTo(hx - B.headR * 1.02, hy + 0.008);
+    ctx.quadraticCurveTo(hx - B.headR * 1.18, hy + 0.075, hx - B.headR * 0.82, hy + 0.108);
+    ctx.lineTo(hx - B.headR * 0.22, hy + 0.088);
+    ctx.quadraticCurveTo(hx - B.headR * 1.02, hy - 0.008, hx - B.headR * 0.6, hy - B.headR * 1.05);
     ctx.quadraticCurveTo(hx, hy - B.headR * 1.3, hx + B.headR * 0.75, hy - B.headR * 1.0);
-    ctx.quadraticCurveTo(hx + B.headR * 1.1, hy + 0.02, hx + B.headR * 0.95, hy + 0.14);
-    ctx.lineTo(hx + B.headR * 0.55, hy + 0.075);
+    ctx.quadraticCurveTo(hx + B.headR * 1.1, hy + 0.018, hx + B.headR * 0.82, hy + 0.10);
+    ctx.lineTo(hx + B.headR * 0.5, hy + 0.06);
     ctx.quadraticCurveTo(hx + B.headR * 0.95, hy - 0.005, hx + B.headR * 0.5, hy - B.headR * 0.9);
-    ctx.quadraticCurveTo(hx, hy - B.headR * 1.12, hx - B.headR * 1.02, hy + 0.01);
+    ctx.quadraticCurveTo(hx, hy - B.headR * 1.12, hx - B.headR * 1.02, hy + 0.008);
   } else {
     ctx.moveTo(hx - B.headR * 0.98, hy + 0.012);
     ctx.quadraticCurveTo(hx - B.headR * 1.12, hy - B.headR * 0.75, hx - B.headR * 0.55, hy - B.headR * 1.05);
@@ -178,17 +208,33 @@ function shade(hex, amt) {
  * @param pose 姿势定义
  * @param o {cx, bottom, height, color, mode, alpha, outline, shadow}
  */
+/** 多人：老的 duo 继续兼容，新的 crew 支持 2~4 人 */
+function crewOf(pose) {
+  if (Array.isArray(pose.crew) && pose.crew.length) return pose.crew;
+  if (pose.duo && pose.duo.id) return [pose.duo];
+  return [];
+}
+
 export function renderPose(ctx, pose, o) {
   const opt = Object.assign({
     color: '#f4e6d6', mode: 'solid', alpha: 1, outline: true, shadow: true, flip: false,
   }, o);
-  if (pose.duo && POSES.length) {
-    const sec = POSES.find((p) => p.id === pose.duo.id);
-    if (sec) {
-      renderPose(ctx, sec, Object.assign({}, opt, {
-        cx: opt.cx + (opt.flip ? -1 : 1) * (pose.duo.dx || 0.3) * opt.height,
-        height: opt.height * (pose.duo.small || 1),
+  if (POSES.length) {
+    for (const c of crewOf(pose)) {
+      const sub = POSES.find((p) => p.id === c.id);
+      if (!sub || sub.id === pose.id) continue;
+      const k = c.small || 1;
+      // 每个人手上都可以有手机；lean 允许单独覆盖（合照时往里靠）
+      const sp = Object.assign({}, sub, {
+        phone: c.phone != null ? c.phone : sub.phone,
+        lean: c.lean != null ? c.lean : sub.lean,
+      });
+      renderPose(ctx, sp, Object.assign({}, opt, {
+        cx: opt.cx + (opt.flip ? -1 : 1) * (c.dx || 0) * opt.height,
+        bottom: opt.bottom - (c.up || 0) * opt.height,
+        height: opt.height * k,
         alpha: opt.alpha * 0.95,
+        flip: c.flip == null ? opt.flip : c.flip,
       }));
     }
   }
@@ -242,7 +288,7 @@ export function renderPose(ctx, pose, o) {
       s * 0.05, s * 0.022, 0, 0, Math.PI * 2);
     ctx.fill();
     // 躯干
-    torsoPath(ctx, j, pose.outfit);
+    torsoPath(ctx, j, pose.outfit, P);
     // 裙/大衣
     const oc = pose.outfit;
     if (oc === 'skirt' || oc === 'dress') {
@@ -271,13 +317,73 @@ export function renderPose(ctx, pose, o) {
     limb(ctx, P(j.elbowR), P(j.wristR), aw * 0.86);
     limb(ctx, P(j.shoulderL), P(j.elbowL), aw);
     limb(ctx, P(j.elbowL), P(j.wristL), aw * 0.86);
+    // 手机（自拍姿势）：长边顺着前臂方向，靠深色描边和手臂分开
+    if (pose.phone) {
+      const box = (px, py, rot) => {
+        const pw = s * 0.056, ph = s * 0.10;
+        ctx.save();
+        ctx.translate(px, py);
+        ctx.rotate(rot);
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(-pw / 2, -ph / 2, pw, ph, s * 0.013);
+        else ctx.rect(-pw / 2, -ph / 2, pw, ph);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(26,18,12,.5)';
+        ctx.lineWidth = Math.max(1, s * 0.007);
+        ctx.stroke();
+        ctx.restore();
+      };
+      const atWrist = (e, w) => {
+        const dx = tx(w[0]) - tx(e[0]);
+        const dy = ty(w[1]) - ty(e[1]);
+        const len = Math.hypot(dx, dy) || 1;
+        const ux = dx / len, uy = dy / len;
+        box(tx(w[0]) + ux * s * 0.05, ty(w[1]) + uy * s * 0.05, Math.atan2(-ux, uy));
+      };
+      if (pose.phone === 'top') {
+        box((tx(j.wristL[0]) + tx(j.wristR[0])) / 2,
+          (ty(j.wristL[1]) + ty(j.wristR[1])) / 2 - s * 0.03, -0.14);
+      } else if (pose.phone === 'both') {
+        atWrist(j.elbowL, j.wristL);
+        atWrist(j.elbowR, j.wristR);
+      } else if (pose.phone === 'L') {
+        atWrist(j.elbowL, j.wristL);
+      } else {
+        atWrist(j.elbowR, j.wristR);
+      }
+    }
     // 脖子
     limb(ctx, P(j.neck), P([j.neck[0], j.neck[1] - 0.02]), s * 0.045);
-    // 头
+    // 头 + 头发：用"人体单位"画，靠一次仿射变换映射到画布
+    // （直接手写每个控制点的映射容易漏，头发曾经因此完全没显示）
+    ctx.save();
+    if (opt.flip) { ctx.translate(opt.cx * 2, 0); ctx.scale(-1, 1); }
+    ctx.translate(ox, oy);
+    ctx.scale(sq * s, s);
+    const tilt = pose.headTilt || 0;
+    if (tilt) {
+      // 绕脖子转，头就真的歪了（头发的不对称才看得出来）
+      ctx.translate(j.neck[0], j.neck[1]);
+      ctx.rotate((tilt * Math.PI) / 180);
+      ctx.translate(-j.neck[0], -j.neck[1]);
+    }
     ctx.beginPath();
-    ctx.arc(tx(j.head[0]), ty(j.head[1]), s * BODY.headR, 0, Math.PI * 2);
-    ctx.fill();
+    // 头发画在头"后面"（深一档），再把脸的那一坨盖回来，
+    // 这样长发不会像头纱一样把脸遮住
+    ctx.fillStyle = shade(fill, -18);
     hairPath(ctx, j, pose.hair || 'short', opt.flip);
+    ctx.fillStyle = fill;
+    ctx.beginPath();
+    ctx.arc(j.head[0], j.head[1], BODY.headR, 0, Math.PI * 2);
+    ctx.fill();
+    // 额前那一撮，让"有头发"看得出来
+    ctx.fillStyle = shade(fill, -18);
+    ctx.beginPath();
+    ctx.ellipse(j.head[0], j.head[1] - BODY.headR * 0.44, BODY.headR * 0.99, BODY.headR * 0.58,
+      0, Math.PI, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = fill;
+    ctx.restore();
     // 抱着的孩子
     if (pose.hold) {
       const bx = tx(j.wristL[0]) + s * 0.02, by = ty(j.wristL[1]) + s * 0.02;
@@ -460,9 +566,90 @@ export const POSES = [
     tip: '孩子侧坐在手臂上，脸朝镜头，大人看孩子会更温馨',
     lean: -3, arms: [[-30, 96], [24, -84]], legs: [[-4, -1], [4, 2]],
   },
+
+  /* ---------- 自拍（前置摄像头） ---------- */
+  {
+    id: 'sf-one', name: '单手举机', cat: '自拍', hair: 'long', outfit: 'plain',
+    scenes: ['自拍'], dir: 1, phone: 'R',
+    tip: '持机的手臂伸直往斜前偏 15°，手机比眼睛高一点点，下巴收一点',
+    lean: 2, headTilt: -3,
+    arms: [[-8, -14], [120, 110]], legs: [[-4, -2], [5, 2]],
+  },
+  {
+    id: 'sf-high', name: '双手举高', cat: '自拍', hair: 'long', outfit: 'plain',
+    scenes: ['自拍'], dir: 1, phone: 'top',
+    tip: '双手举过头顶俯拍，人往后靠一点，腿会显长',
+    lean: 3, arms: [[-138, -152], [138, 152]], legs: [[-5, -2], [5, 2]],
+  },
+  {
+    id: 'sf-tilt', name: '歪头贴手', cat: '自拍', hair: 'long', outfit: 'plain',
+    scenes: ['自拍'], dir: 1, phone: 'L',
+    tip: '头歪向手这一侧，手背轻轻贴住头发，另一只手把手机举出去',
+    lean: 1, headTilt: -12,
+    arms: [[-118, -112], [96, -120]], legs: [[-5, -2], [4, 2]],
+  },
+  {
+    id: 'sf-side', name: '侧脸举机', cat: '自拍', hair: 'long', outfit: 'dress',
+    scenes: ['自拍'], dir: 1, sq: 0.78, phone: 'R',
+    tip: '身体侧过来只给三分之一脸，下巴微收，眼神飘向镜头边缘',
+    lean: 5, headTilt: 9,
+    arms: [[-14, -22], [126, 116]], legs: [[-6, -2], [5, 2]],
+  },
+  {
+    id: 'sf-chin', name: '托腮举机', cat: '自拍', hair: 'long', outfit: 'plain',
+    scenes: ['自拍'], dir: 1, phone: 'L',
+    tip: '手背托在下巴侧面，手指放松，另一只手把手机举到眼睛高度',
+    lean: -2, headTilt: 6,
+    arms: [[-120, -114], [95, -100]], legs: [[-4, -2], [4, 2]],
+  },
+  {
+    id: 'sf-heart', name: '比心举机', cat: '自拍', hair: 'long', outfit: 'plain',
+    scenes: ['自拍'], dir: 1, phone: 'R',
+    tip: '一只手在胸前比心，另一只手举机；比心的手别挡住脸',
+    lean: 1, headTilt: -5,
+    arms: [[30, 100], [122, 112]], legs: [[-5, -2], [5, 2]],
+  },
+  {
+    id: 'sf-chest', name: '胸前举机', cat: '自拍', hair: 'long', outfit: 'plain',
+    scenes: ['自拍'], dir: 1, phone: 'R',
+    tip: '手机放胸口、镜头略微朝上，眼睛看镜头，这个角度最不显双下巴',
+    lean: -3, headTilt: 4,
+    arms: [[-26, 84], [26, -84]], legs: [[-4, -2], [4, 2]],
+  },
+  {
+    id: 'sf-duo', name: '两人贴脸', cat: '自拍', hair: 'long', outfit: 'dress',
+    scenes: ['自拍'], dir: 1, phone: 'R',
+    crew: [{ id: 'half-close', dx: 0.21, small: 0.98, lean: -7 }],
+    tip: '两个人的头往里靠、肩往外开，脸要在同一个高度',
+    lean: 7, headTilt: -6,
+    arms: [[-6, -10], [118, 108]], legs: [[-4, -2], [5, 2]],
+  },
+  {
+    id: 'sf-trio', name: '三人 V 字', cat: '自拍', hair: 'long', outfit: 'plain',
+    scenes: ['自拍'], dir: 1, phone: 'R',
+    crew: [
+      { id: 'stand-basic', dx: 0.27, small: 0.97, up: 0.028, lean: -8 },
+      { id: 'sf-one', dx: -0.27, small: 0.97, up: 0.028, lean: 8, phone: null },
+    ],
+    tip: '最矮的站中间最前面，两边的头往中间靠，三个头形成一个小 V',
+    lean: 0, headTilt: 0,
+    arms: [[-6, -10], [116, 106]], legs: [[-4, -2], [4, 2]],
+  },
+  {
+    id: 'sf-four', name: '四人两排', cat: '自拍', hair: 'long', outfit: 'plain',
+    scenes: ['自拍'], dir: 1, phone: 'R',
+    crew: [
+      { id: 'sf-one', dx: 0.22, small: 0.99, lean: -6, phone: null },
+      { id: 'stand-basic', dx: -0.29, small: 0.9, up: 0.022, lean: 6 },
+      { id: 'half-close', dx: 0.32, small: 0.9, up: 0.022, lean: -6 },
+    ],
+    tip: '前面两人矮一点、后面两人高一点，后排的头从两个缝里露出来',
+    lean: 0, headTilt: 0,
+    arms: [[-6, -10], [114, 104]], legs: [[-4, -2], [4, 2]],
+  },
 ];
 
-export const POSE_CATS = ['全部', '站姿', '动态', '坐姿', '特写', '情侣', '家庭'];
+export const POSE_CATS = ['全部', '站姿', '动态', '坐姿', '特写', '情侣', '家庭', '自拍'];
 
 export function posesByScene(scene, cat) {
   return POSES.filter((p) => (cat === '全部' || p.cat === cat));

@@ -1,5 +1,5 @@
-光位 v1.2
-build: guangwei-87f478a8
-commit: v1.2 右缘按钮三档循环：全显示/只留框/全隐藏
-date: 2026-11-18 01:22
+光位 v1.3
+build: guangwei-557e252a
+commit: v1.3 自拍模式：头部框/多人排布/自拍姿势10式/定时器/大字HUD
+date: 2026-11-18 02:19
 live: https://yanzhongmin.github.io/guangwei/

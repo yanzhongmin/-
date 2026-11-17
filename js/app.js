@@ -1,6 +1,6 @@
 import { analyzePixels } from './scene.js';
 import { recommendPlacement } from './compose.js';
-import { recommendParams } from './params.js';
+import { recommendParams, recommendSelfieParams } from './params.js';
 import { POSES, POSE_CATS, renderPose, poseThumb } from './poses.js';
 import {
   PRESETS, buildFilter, applyToPreview, paintGrade, makeGrain,
@@ -9,6 +9,7 @@ import {
   Beauty, renderBeauty, BEAUTY_DEFAULT, BEAUTY_SLIDERS,
 } from './beauty.js';
 import { Framer } from './guide.js';
+import { selfieLayout, drawHeadBox, drawPhoneIcon } from './selfie.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -32,6 +33,8 @@ const S = {
   live: false, photoEl: null, altIdx: 0, ready: false, showGrid: true,
   figMode: 'full',
   aim: null,
+  // 自拍模式
+  selfie: false, stick: false, selfieL: null, timerSec: 0, counting: false,
 };
 
 const els = {};
@@ -56,6 +59,10 @@ function boot() {
   els.empty = $('#empty');
   els.dock = $('#dock');
   els.btnOverlay = $('#btnOverlay');
+  els.hud = $('#hud');
+  els.hudTip = $('#hudTip');
+  els.countdown = $('#countdown');
+  els.btnTimer = $('#btnTimer');
 
   analysisCanvas = document.createElement('canvas');
   actx = analysisCanvas.getContext('2d', { willReadFrequently: true });
@@ -127,6 +134,7 @@ async function startCamera() {
     if (timer) clearInterval(timer);
     timer = setInterval(tick, 620);
     setTimeout(tick, 200);
+    applyMode();
   } catch (e) {
     showEmpty('相机没打开：' + (e && e.name === 'NotAllowedError' ? '你拒绝了权限，允许之后点"重新打开"' : '换个浏览器或者用照片模式'));
   }
@@ -177,8 +185,8 @@ function tick() {
   S.analysis = analyzePixels(img.data, aw, ah);
   S.ready = true;
 
-  // 她对位到目标框了没有 —— 只有已经知道推荐位置时才判
-  const tb = currentBox();
+  // 她对位到目标框了没有 —— 只有已经知道推荐位置时才判（自拍不做背景差分：人一动整屏都在动）
+  const tb = S.selfie ? null : currentBox();
   if (tb) {
     if (!framer || fraW !== aw || fraH !== ah) {
       framer = new Framer(aw, ah);
@@ -188,6 +196,8 @@ function tick() {
     S.aim = framer.push(img.data, {
       cx: tb.x + tb.w / 2, cy: tb.y + tb.h / 2, w: tb.w, h: tb.h,
     });
+  } else if (S.selfie) {
+    S.aim = null;
   }
   refresh();
 }
@@ -200,16 +210,39 @@ function refresh() {
     rafPending = false;
     const a = S.analysis;
     const subj = { ...S.subject, crop: poseCrop() };
-    S.placement = recommendPlacement(a, subj, S.rule);
-    S.params = recommendParams(a, subj, S.placement);
-    renderSceneChip(a);
-    renderPlace();
+    if (S.selfie) {
+      S.selfieL = selfieLayout(a,
+        { height: S.subject.height, count: S.subject.count, stick: S.stick },
+        { aspect: analysisCanvas.width / analysisCanvas.height });
+      S.placement = null;
+      S.params = recommendSelfieParams(a, subj, S.selfieL);
+      renderSceneChip(a);
+      renderSelfieCompose();
+    } else {
+      S.selfieL = null;
+      S.placement = recommendPlacement(a, subj, S.rule);
+      S.params = recommendParams(a, subj, S.placement);
+      renderSceneChip(a);
+      renderPlace();
+    }
     renderParams();
     renderMoodTips();
     renderAim();
     if (els.btnOverlay) els.btnOverlay.hidden = !S.ready;
+    renderHud();
     drawOverlay();
   });
+}
+
+/** 自拍模式的大字提示（只留最关键的一句） */
+function renderHud() {
+  if (!els.hud) return;
+  if (!S.selfie) { els.hud.classList.remove('on'); return; }
+  const L = S.selfieL;
+  const t = L ? (L.hud || '') : '';
+  if (!t) { els.hud.classList.remove('on'); return; }
+  els.hudTip.textContent = t;
+  els.hud.classList.add('on');
 }
 
 function poseCrop() {
@@ -241,18 +274,31 @@ const RULE_LIST = [
 
 function buildRules() {
   const box = $('#rules');
-  box.innerHTML = RULE_LIST.map(([k, n, d]) => (
-    `<button class="rule${k === S.rule ? ' on' : ''}" data-rule="${k}">
-       <b>${n}</b><i>${d}</i>
-     </button>`)).join('');
-  box.addEventListener('click', (e) => {
-    const b = e.target.closest('.rule');
-    if (!b) return;
-    S.rule = b.dataset.rule;
-    S.altIdx = 0;
-    $$('.rule', box).forEach((x) => x.classList.toggle('on', x === b));
+  // 自拍模式没有"站哪"，改成选择手持还是自拍杆
+  box.innerHTML = S.selfie
+    ? SELFIE_RULES.map(([st, n, d]) => (
+      `<button class="rule${st === S.stick ? ' on' : ''}" data-stick="${st}">
+         <b>${n}</b><i>${d}</i>
+       </button>`)).join('')
+    : RULE_LIST.map(([k, n, d]) => (
+      `<button class="rule${k === S.rule ? ' on' : ''}" data-rule="${k}">
+         <b>${n}</b><i>${d}</i>
+       </button>`)).join('');
+}
+
+function onRulesClick(e) {
+  const b = e.target.closest('.rule');
+  if (!b) return;
+  if (b.dataset.stick != null) {
+    S.stick = b.dataset.stick === 'true';
+    $$('#rules .rule').forEach((x) => x.classList.toggle('on', x === b));
     refresh();
-  });
+    return;
+  }
+  S.rule = b.dataset.rule;
+  S.altIdx = 0;
+  $$('#rules .rule').forEach((x) => x.classList.toggle('on', x === b));
+  refresh();
 }
 
 function currentBox() {
@@ -301,8 +347,13 @@ function buildPoses() {
 function renderPoseList(cat) {
   const list = $('#poseList');
   const sceneName = S.analysis ? SCENE_NAME[S.analysis.type] : null;
-  let items = POSES.filter((p) => cat === '全部' || p.cat === cat);
-  if (cat === '全部' && sceneName) {
+  // 自拍只有一个分类，且把"人数对得上"的排前面
+  const use = S.selfie ? '自拍' : cat;
+  let items = POSES.filter((p) => use === '全部' || p.cat === use);
+  if (S.selfie) {
+    const n = S.subject.count || 1;
+    items = [...items].sort((a, b) => (crewCount(b) === n ? 1 : 0) - (crewCount(a) === n ? 1 : 0));
+  } else if (cat === '全部' && sceneName) {
     items = [...items].sort((a, b) => {
       const sa = a.scenes.includes(sceneName) ? 1 : 0;
       const sb = b.scenes.includes(sceneName) ? 1 : 0;
@@ -398,8 +449,139 @@ function renderMoodTips() {
   $('#moodTips').innerHTML = pr.mood.map((m) => `<li>${m}</li>`).join('');
 }
 
-/* ---------------- 对位提示 ---------------- */
-const AIM_ARROW = { left: '←', right: '→', fwd: '↓', back: '↑' };
+/* ---------------- 自拍模式 ---------------- */
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const SELFIE_RULES = [
+  [false, '手持', '0.6–0.8m，手臂伸直'],
+  [true, '自拍杆', '1.0–1.2m，杆别入画'],
+];
+const TIMER_STEPS = [0, 3, 5, 10];
+
+/** 一个人形里一共几个人（自拍合照按人数匹配） */
+function crewCount(p) {
+  return 1 + (p.crew ? p.crew.length : p.duo ? 1 : 0);
+}
+
+/** 切前后摄像头后统一刷新界面形态 */
+function applyMode() {
+  const was = S.selfie;
+  S.selfie = S.facing === 'user';
+  document.body.classList.toggle('selfie', S.selfie);
+  els.btnTimer.hidden = !S.selfie;
+  els.hud.hidden = !S.selfie;
+  if (S.selfie !== was) {
+    S.aim = null;
+    framer = null;
+    buildRules();
+    if (S.selfie) {
+      if (!POSES.find((p) => p.id === S.poseId && p.cat === '自拍')) selectPose('sf-one');
+      setCats('自拍');
+    } else {
+      if (!POSES.find((p) => p.id === S.poseId && p.cat !== '自拍')) selectPose('stand-basic');
+      setCats('全部');
+      els.hud.classList.remove('on');
+    }
+  }
+  renderTimerBtn();
+  refresh();
+  drawOverlay();
+}
+
+function setCats(cat) {
+  $$('#poseCats .cat').forEach((x) => x.classList.toggle('on', x.dataset.cat === cat));
+  renderPoseList(cat);
+}
+
+function renderTimerBtn() {
+  if (!els.btnTimer) return;
+  els.btnTimer.textContent = S.timerSec ? `定时 ${S.timerSec}s` : '定时 关';
+  els.btnTimer.classList.toggle('on', !!S.timerSec);
+}
+
+/** 按快门（自拍模式下先走定时器） */
+async function shoot() {
+  if (S.counting) return;
+  if (!S.live && !S.photoEl) return;
+  if (!S.selfie || !S.timerSec) { capture(); return; }
+  S.counting = true;
+  els.countdown.hidden = false;
+  for (let i = S.timerSec; i > 0; i--) {
+    els.countdown.innerHTML = `<span>${i}</span>`;
+    await sleep(1000);
+  }
+  els.countdown.hidden = true;
+  els.countdown.innerHTML = '';
+  S.counting = false;
+  capture();
+}
+
+/** 自拍构图面板（复用"构图"页的三个块） */
+function renderSelfieCompose() {
+  const L = S.selfieL;
+  if (!L) return;
+  $('#placeTip').textContent = L.count > 1
+    ? `${L.count} 个人：头都塞进虚线框，最矮的站最前面`
+    : '头放进框里，头顶留一拳的空';
+  $('#placeReasons').innerHTML = L.tips.slice(0, 3).map((t) => `<li>${t}</li>`).join('');
+  $('#placeMove').textContent = '';
+  $('#placeAlts').innerHTML = '';
+  const camH = S.params ? S.params.camH.toFixed(2) : '-';
+  $('#placeMeta').textContent = `${L.focalShort || L.focal}　·　${L.distance}　·　机位约 ${camH}m`;
+}
+
+/** 自拍叠加层：头部框 + 安全区 + 举机示意 */
+function drawSelfieOverlay(W, H) {
+  const L = S.selfieL;
+  if (!L || !showGuide()) return;
+  if (showFigure() && S.showGrid) {
+    octx.save();
+    octx.strokeStyle = 'rgba(255,255,255,.18)';
+    octx.lineWidth = 1;
+    for (const x of [1 / 3, 2 / 3]) {
+      octx.beginPath(); octx.moveTo(W * x, 0); octx.lineTo(W * x, H); octx.stroke();
+    }
+    for (const y of [1 / 3, 2 / 3]) {
+      octx.beginPath(); octx.moveTo(0, H * y); octx.lineTo(W, H * y); octx.stroke();
+    }
+    octx.restore();
+  }
+  // 安全区：所有人都在这个框里才不会被切
+  if (showFigure() && L.count > 1) {
+    const s = L.safe;
+    octx.save();
+    octx.setLineDash([5, 7]);
+    octx.strokeStyle = 'rgba(255,255,255,.42)';
+    octx.lineWidth = 1.2;
+    roundRect(octx, s.x * W, s.y * H, s.w * W, s.h * H, 16);
+    octx.stroke();
+    octx.restore();
+  }
+  // 头部框
+  for (const h of L.heads) drawHeadBox(octx, h, W, H, { on: true });
+  // 多人的话标一下谁站哪
+  if (L.count > 1) {
+    octx.save();
+    octx.font = '600 11px system-ui, "PingFang SC", "Microsoft YaHei", sans-serif';
+    octx.textAlign = 'center';
+    octx.textBaseline = 'bottom';
+    for (const h of L.heads) {
+      if (!h.label) continue;
+      octx.fillStyle = 'rgba(20,16,12,.62)';
+      const tw = octx.measureText(h.label).width + 10;
+      const cx = h.cx * W, ty = h.top * H - 5;
+      roundRect(octx, cx - tw / 2, ty - 15, tw, 15, 7);
+      octx.fill();
+      octx.fillStyle = '#ffdcb4';
+      octx.fillText(h.label, cx, ty - 3);
+    }
+    octx.restore();
+  }
+  // 举机示意（右下角）
+  if (showFigure()) drawPhoneIcon(octx, W - 46, H - 40, 24, L.phone);
+}
+
+
 
 function renderAim() {
   const el = els.aim;
@@ -489,6 +671,9 @@ function drawOverlay() {
   if (!W || !H) return;
   octx.clearRect(0, 0, W, H);
   if (!S.ready) return;
+
+  // 自拍走另一套叠加层：头部框 + 安全区 + 举机示意
+  if (S.selfie) { drawSelfieOverlay(W, H); return; }
 
   // 网格
   if (showFigure() && S.showGrid) {
@@ -638,8 +823,13 @@ async function capture() {
   const dw = sw * sc, dh = sh * sc;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.filter = 'none';
+  // 前置：预览是镜像的，成片也镜像（看到什么就拍到什么，左右不会反）
+  if (S.selfie) {
+    ctx.setTransform(-1, 0, 0, 1, W, 0);
+  }
   // 先存原始帧，美颜和调色都在后面一起上，这样滑杆可以反复调
   ctx.drawImage(src, (W - dw) / 2, (H - dh) / 2, dw, dh);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
 
   els.flash.classList.add('on');
   setTimeout(() => els.flash.classList.remove('on'), 220);
@@ -835,9 +1025,18 @@ function bind() {
   };
   $('#btnFlip').onclick = () => {
     S.facing = S.facing === 'environment' ? 'user' : 'environment';
+    applyMode();
     if (S.live || els.video.srcObject) startCamera();
+    else drawOverlay();
   };
-  $('#btnShutter').onclick = capture;
+  $('#btnShutter').onclick = shoot;
+  $('#btnTimer').onclick = () => {
+    const i = TIMER_STEPS.indexOf(S.timerSec);
+    S.timerSec = TIMER_STEPS[(i + 1) % TIMER_STEPS.length];
+    renderTimerBtn();
+    if (S.timerSec) toast(`定时 ${S.timerSec} 秒：按下快门后倒数`, 1600);
+  };
+  $('#rules').addEventListener('click', onRulesClick);
   $('#btnSubject').onclick = openSubject;
 
   // 右缘按钮：三档循环 全显示 → 只留框 → 全隐藏
