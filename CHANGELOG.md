@@ -87,4 +87,8 @@ python -m http.server 8777 --bind 127.0.0.1 --directory <这个目录>
    ```powershell
    node dev/cdp.mjs "http://127.0.0.1:8777/index.html?dbg&nosw" dev/shots/x.png 390 844 3000 "@dev/expr_smoke.js"
    ```
-5. 发版：`pwsh dev/deploy.ps1 "改了什么"`
+5. 发版：
+   ```powershell
+   powershell -NoProfile -ExecutionPolicy Bypass -File dev\deploy.ps1 -Msg "改了什么"
+   ```
+   （这台机器是 Windows PowerShell 5.1，**没有 pwsh**；脚本必须存成 UTF-8 带 BOM，否则 5.1 会把中文读成乱码）
