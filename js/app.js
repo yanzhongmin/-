@@ -30,6 +30,7 @@ const S = {
   subject: { height: 170, style: 'f', outfitColor: '#e9e4dc', count: 1 },
   analysis: null, placement: null, params: null,
   live: false, photoEl: null, altIdx: 0, ready: false, showGrid: true,
+  showFigure: true,
   aim: null,
 };
 
@@ -54,6 +55,7 @@ function boot() {
   els.flash = $('#flash');
   els.empty = $('#empty');
   els.dock = $('#dock');
+  els.btnOverlay = $('#btnOverlay');
 
   analysisCanvas = document.createElement('canvas');
   actx = analysisCanvas.getContext('2d', { willReadFrequently: true });
@@ -70,6 +72,7 @@ function boot() {
   bind();
   selectPose(S.poseId);
   applyGrade();
+  setFigure(readPref('gw.figure') !== '0', false);
   resize();
   new ResizeObserver(resize).observe(els.stage);
   if (DBG) {
@@ -203,6 +206,7 @@ function refresh() {
     renderParams();
     renderMoodTips();
     renderAim();
+    if (els.btnOverlay) els.btnOverlay.hidden = !S.ready;
     drawOverlay();
   });
 }
@@ -318,7 +322,11 @@ function renderPoseList(cat) {
     const label = document.createElement('span');
     label.textContent = p.name;
     b.append(c, label);
-    b.onclick = () => selectPose(p.id);
+    b.onclick = () => {
+      selectPose(p.id);
+      // 换姿势就是想看这个姿势，人形要是被藏了就先亮出来
+      if (!S.showFigure) setFigure(true);
+    };
     list.append(b);
   }
 }
@@ -408,6 +416,31 @@ function renderAim() {
 }
 
 /* ---------------- 覆盖层 ---------------- */
+function readPref(k) {
+  try { return localStorage.getItem(k); } catch { return null; }
+}
+function writePref(k, v) {
+  try { localStorage.setItem(k, v); } catch { /* 无痕模式下就记不住，无所谓 */ }
+}
+
+/** 一键隐藏/显示姿势参考人形（站位框、网格、对位提示都保留） */
+function setFigure(on, save = true) {
+  S.showFigure = !!on;
+  const b = els.btnOverlay;
+  if (b) {
+    b.classList.toggle('off', !S.showFigure);
+    b.setAttribute('aria-pressed', String(S.showFigure));
+    b.setAttribute('aria-label', S.showFigure ? '隐藏姿势参考' : '显示姿势参考');
+  }
+  // 恢复时顺手把"已隐藏"的提示收掉，免得自相矛盾
+  if (S.showFigure) {
+    const t = document.getElementById('toast');
+    if (t) t.classList.remove('on');
+  }
+  drawOverlay();
+  if (save) writePref('gw.figure', S.showFigure ? '1' : '0');
+}
+
 function resize() {
   const w = els.stage.clientWidth, h = els.stage.clientHeight;
   if (!w || !h) return;
@@ -497,12 +530,15 @@ function drawOverlay() {
     octx.restore();
 
     // 姿势剪影
-    const pose = POSES.find((x) => x.id === S.poseId) || POSES[0];
-    const flip = p.cx > 0.54;
-    renderPose(octx, pose, {
-      cx: bx + bw / 2, bottom: by + bh, height: bh * 0.97,
-      color: '#ffdcb4', mode: 'ghost', alpha: 0.92, outline: true, shadow: false, flip,
-    });
+    // 姿势剪影（可用右缘眼睛一键隐藏：人形常挡住真人）
+    if (S.showFigure) {
+      const pose = POSES.find((x) => x.id === S.poseId) || POSES[0];
+      const flip = p.cx > 0.54;
+      renderPose(octx, pose, {
+        cx: bx + bw / 2, bottom: by + bh, height: bh * 0.97,
+        color: '#ffdcb4', mode: 'ghost', alpha: 0.92, outline: true, shadow: false, flip,
+      });
+    }
 
     // 标签
     octx.save();
@@ -746,7 +782,7 @@ function closeEdit() {
   c.clearRect(0, 0, cv.width, cv.height);
 }
 
-function toast(msg) {
+function toast(msg, ms = 1800) {
   let t = document.getElementById('toast');
   if (!t) {
     t = document.createElement('div');
@@ -756,7 +792,7 @@ function toast(msg) {
   t.textContent = msg;
   t.classList.add('on');
   clearTimeout(t._h);
-  t._h = setTimeout(() => t.classList.remove('on'), 1800);
+  t._h = setTimeout(() => t.classList.remove('on'), ms);
 }
 
 /* ---------------- 人物设置 ---------------- */
@@ -788,6 +824,15 @@ function bind() {
   };
   $('#btnShutter').onclick = capture;
   $('#btnSubject').onclick = openSubject;
+
+  // 右缘眼睛：一键隐藏/显示姿势参考人形
+  els.btnOverlay.onclick = () => {
+    setFigure(!S.showFigure);
+    if (!S.showFigure && readPref('gw.figTip') !== '1') {
+      writePref('gw.figTip', '1');
+      toast('姿势图已隐藏，框还留着 · 再点右边这只眼睛就回来', 2600);
+    }
+  };
 
   /* --- 拍后编辑 --- */
   $('#editAgain').onclick = closeEdit;

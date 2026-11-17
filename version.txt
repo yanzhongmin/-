@@ -1,5 +1,5 @@
 光位 v1.0
-build: guangwei-a649add8
-commit: 文档：版本探测指向 version.txt
-date: 2026-11-18 00:39
+build: guangwei-e6d7f6f8
+commit: v1.1 姿势人形可一键隐藏（取景框右缘眼睛）
+date: 2026-11-18 01:01
 live: https://yanzhongmin.github.io/guangwei/
