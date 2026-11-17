@@ -4,11 +4,13 @@
 
 全部在手机本地算，**照片不上传**，没有账号，没有后端。
 
+> **已上线**：https://yanzhongmin.github.io/guangwei/
+
 ---
 
 ## 手机上怎么打开
 
-部署到 GitHub Pages 后是一个 https 地址（例如 `https://<你的用户名>.github.io/guangwei/`）。用手机浏览器打开即可：
+地址：**https://yanzhongmin.github.io/guangwei/**
 
 - **华为 / 安卓 Chrome、Edge、夸克**：右上菜单 →「添加到主屏幕」，之后像 App 一样全屏打开。
 - **iPhone Safari**：分享 →「添加到主屏幕」。
