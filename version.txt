@@ -1,5 +1,5 @@
-光位 v1.0
+光位 v1.1
 build: guangwei-e6d7f6f8
-commit: v1.1 姿势人形可一键隐藏（取景框右缘眼睛）
-date: 2026-11-18 01:01
+commit: version.txt 的版本号从 CHANGELOG 自动取
+date: 2026-11-18 01:04
 live: https://yanzhongmin.github.io/guangwei/
