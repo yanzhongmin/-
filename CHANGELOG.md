@@ -4,7 +4,8 @@
 
 线上地址：https://yanzhongmin.github.io/guangwei/
 仓库：`yanzhongmin/guangwei`，分支 `gh-pages`
-存档 commit（站点内容）：`6f1fedf`
+
+**想知道线上现在是哪一版**：打开 https://yanzhongmin.github.io/guangwei/version.txt ，里面的 `build:` 就是 `sw.js` 的缓存版本号（= 代码+资源的哈希），换了就说明 Pages 已经重新构建。
 
 ### 这一版能做什么
 

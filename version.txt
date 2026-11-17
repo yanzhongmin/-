@@ -1,5 +1,5 @@
 光位 v1.0
 build: guangwei-a649add8
-commit: 加 .nojekyll 和 version.txt（能确认 Pages 重新构建了）
-date: 2026-11-18 00:38
+commit: 文档：版本探测指向 version.txt
+date: 2026-11-18 00:39
 live: https://yanzhongmin.github.io/guangwei/
