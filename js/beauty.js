@@ -11,7 +11,7 @@ export const BEAUTY_DEFAULT = {
   deshine: 0.55,  // 去油光（额头鼻尖高光）
   glow: 0.30,     // 气色（一点血色）
   even: 0.38,     // 肤色统一
-  leg: 0.14,      // 轻微拉长腿
+  leg: 0,         // 拉长腿：默认关闭，要拉自己拖
   slim: 0,        // 瘦脸
 };
 
@@ -21,7 +21,7 @@ export const BEAUTY_SLIDERS = [
   { k: 'deshine', name: '去油光', min: 0, max: 1, def: 0.55, hint: '额头和鼻尖的高光压下去' },
   { k: 'glow', name: '气色', min: 0, max: 1, def: 0.30, hint: '加一点血色，不是惨白' },
   { k: 'even', name: '肤色统一', min: 0, max: 1, def: 0.38, hint: '脸和脖子不会两个色' },
-  { k: 'leg', name: '拉长腿', min: 0, max: 0.3, def: 0.14, hint: '从胯部往下渐变拉伸，站姿明显' },
+  { k: 'leg', name: '拉长腿', min: 0, max: 0.3, def: 0, hint: '默认不拉，想显腿长自己往右拖（站姿最明显）' },
   { k: 'slim', name: '瘦脸', min: 0, max: 0.3, def: 0, hint: '默认关闭，觉得脸宽再往右拉' },
 ];
 

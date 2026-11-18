@@ -1,5 +1,5 @@
 /* sw.js — 离线壳缓存。改前端文件时把 VERSION 加一，手机上重新打开就会更新。 */
-const VERSION = 'guangwei-ac639a59';
+const VERSION = 'guangwei-af13227a';
 const ASSETS = [
   './',
   './index.html',
